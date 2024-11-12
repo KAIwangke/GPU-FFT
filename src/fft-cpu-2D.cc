@@ -1,3 +1,4 @@
+#include "common.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -66,36 +67,9 @@ void fft_1d_column(float* data, int width, int height, int step) {
     }
 }
 
-// Function to determine matrix dimensions from file
-void get_matrix_dimensions(const char* filename, int &width, int &height) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Cannot open file " << filename << std::endl;
-        exit(EXIT_FAILURE);
-    }
 
-    // Read first line to determine width
-    std::string line;
-    if (getline(file, line)) {
-        std::istringstream iss(line);
-        float value;
-        width = 0;
-        while (iss >> value) {
-            ++width;
-        }
-    }
 
-    // Count newlines to determine height
-    height = 1; // We already read one line
-    while (getline(file, line)) {
-        ++height;
-    }
-
-    file.close();
-}
-
-// 2D FFT function
-void fft_2d(float* data, int width, int height) {
+void compute_2d_fft_cpu(float* data, int width, int height) {
     // Perform FFT on rows
     for (int step = 2; step <= width; step <<= 1) {
         fft_1d_row(data, width, height, step);
@@ -106,77 +80,42 @@ void fft_2d(float* data, int width, int height) {
     }
 }
 
-// Main function
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <input_directory>" << endl;
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
         return 1;
     }
 
-    const char* directory_path = argv[1];
-    DIR* dir = opendir(directory_path);
-    if (!dir) {
-        cerr << "Error: Cannot open directory " << directory_path << endl;
+    // Get matrix dimensions
+    int width, height;
+    get_matrix_dimensions(argv[1], width, height);
+    std::cout << "Processing matrix of size " << width << "x" << height << std::endl;
+
+    // Read input data
+    std::vector<float> data;
+    if (!read_matrix_data(argv[1], data, width, height)) {
         return 1;
     }
 
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        // Process only .dat files
-        if (strstr(entry->d_name, ".dat") != NULL) {
-            string input_filepath = string(directory_path) + "/" + entry->d_name;
-
-            // Determine matrix dimensions
-            int width, height;
-            get_matrix_dimensions(input_filepath.c_str(), width, height);
-            cout << "Processing " << entry->d_name << " with dimensions: " << width << "x" << height << endl;
-
-            int size = width * height * 2;
-            float* h_data = new float[size];
-
-            // Read matrix data from file
-            ifstream infile(input_filepath);
-            if (!infile.is_open()) {
-                cerr << "Error: Cannot open file " << input_filepath << endl;
-                delete[] h_data;
-                continue;
-            }
-            for (int i = 0; i < width * height; i++) {
-                infile >> h_data[i * 2];    // Real part
-                h_data[i * 2 + 1] = 0.0f;   // Imaginary part set to 0
-            }
-            infile.close();
-
-            // Start timing
-            auto start = chrono::high_resolution_clock::now();
-
-            // Perform 2D FFT on CPU
-            fft_2d(h_data, width, height);
-
-            // Stop timing
-            auto finish = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::microseconds>(finish - start).count();
-            cout << "Elapsed time for " << entry->d_name << ": " << duration / 1e6 << " seconds" << endl;
-
-            // Create output filename
-            string output_filename = string(entry->d_name) + ".out";
-            ofstream outfile(output_filename);
-            outfile.precision(6);
-            outfile << "2D FFT Output (partial):" << endl;
-            for (int i = 0; i < min(5, height); i++) {
-                for (int j = 0; j < min(5, width); j++) {
-                    float real_part = h_data[(i * width + j) * 2];
-                    float imag_part = h_data[(i * width + j) * 2 + 1];
-                    outfile << "X[" << i << "][" << j << "] = " << real_part << " + " << imag_part << "i\t";
-                }
-                outfile << endl;
-            }
-            outfile.close();
-
-            // Free memory
-            delete[] h_data;
+    // Print input sample
+    std::cout << "Input Matrix (partial):" << std::endl;
+    for (int i = 0; i < std::min(5, height); ++i) {
+        for (int j = 0; j < std::min(5, width); ++j) {
+            std::cout << data[i * width * 2 + j * 2] << " ";
         }
+        std::cout << std::endl;
     }
-    closedir(dir);
+
+    // Start timing
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // Perform FFT
+    compute_2d_fft_cpu(data.data(), width, height);
+
+    // Stop timing
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Total execution time: " << duration.count() << " ms" << std::endl;
+
     return 0;
 }

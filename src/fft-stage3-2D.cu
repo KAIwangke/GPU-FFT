@@ -1,231 +1,162 @@
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <cmath>
-#include <chrono>
-#include <cuda_runtime.h>
-#include <dirent.h>  // For directory handling
-#include <cstring>
-
-using namespace std;
-
-#define M_PI 3.14159265358979323846
-
-// CUDA Kernel for 1D FFT on rows using shared memory
-__global__ void fft_1d_row(float* d_r, int width, int height, int step) {
-    extern __shared__ float s_data[]; // Shared memory for row data
-    int row = blockIdx.x;
-    int col = threadIdx.x;
-
-    int half_step = step / 2;
-    if (col < half_step && row < height) {
-        int idx1 = row * width * 2 + col * 2;
-        int idx2 = idx1 + step * 2;
-
-        // Load to shared memory
-        s_data[2 * col] = d_r[idx1];
-        s_data[2 * col + 1] = d_r[idx1 + 1];
-        s_data[2 * (col + half_step)] = d_r[idx2];
-        s_data[2 * (col + half_step) + 1] = d_r[idx2 + 1];
-        __syncthreads(); // Ensure all threads load data before computing
-
-        // Perform FFT in shared memory
-        float angle = -2.0f * M_PI * col / step;
-        float t_real = cosf(angle);
-        float t_imag = sinf(angle);
-
-        float u_real = s_data[2 * col];
-        float u_imag = s_data[2 * col + 1];
-        float v_real = s_data[2 * (col + half_step)];
-        float v_imag = s_data[2 * (col + half_step) + 1];
-
-        float tr = t_real * v_real - t_imag * v_imag;
-        float ti = t_real * v_imag + t_imag * v_real;
-
-        s_data[2 * col] = u_real + tr;
-        s_data[2 * col + 1] = u_imag + ti;
-        s_data[2 * (col + half_step)] = u_real - tr;
-        s_data[2 * (col + half_step) + 1] = u_imag - ti;
-        __syncthreads(); // Synchronize before writing back to global memory
-
-        // Write back from shared memory to global memory
-        d_r[idx1] = s_data[2 * col];
-        d_r[idx1 + 1] = s_data[2 * col + 1];
-        d_r[idx2] = s_data[2 * (col + half_step)];
-        d_r[idx2 + 1] = s_data[2 * (col + half_step) + 1];
-    }
+#include "common.hpp"
+// Stage 3: Warp-level optimization
+__device__ inline void warp_butterfly(volatile float* s_real, volatile float* s_imag, 
+                                    int tid, int stride) {
+    float angle = -2.0f * M_PI * (tid % stride) / (stride * 2);
+    float t_real = cosf(angle);
+    float t_imag = sinf(angle);
+    
+    int pos = 2 * tid - (tid & (stride - 1));
+    float u_real = s_real[pos];
+    float u_imag = s_imag[pos];
+    float v_real = s_real[pos + stride];
+    float v_imag = s_imag[pos + stride];
+    
+    float tr = t_real * v_real - t_imag * v_imag;
+    float ti = t_real * v_imag + t_imag * v_real;
+    
+    s_real[pos] = u_real + tr;
+    s_imag[pos] = u_imag + ti;
+    s_real[pos + stride] = u_real - tr;
+    s_imag[pos + stride] = u_imag - ti;
 }
 
-// CUDA Kernel for 1D FFT on columns using shared memory
-__global__ void fft_1d_column(float* d_r, int width, int height, int step) {
-    extern __shared__ float s_data[]; // Shared memory for column data
-    int col = blockIdx.x;
-    int row = threadIdx.x;
-
-    int half_step = step / 2;
-    if (row < half_step && col < width) {
-        int idx1 = col * 2 + row * width * 2;
-        int idx2 = idx1 + step * width * 2;
-
-        // Load to shared memory
-        s_data[2 * row] = d_r[idx1];
-        s_data[2 * row + 1] = d_r[idx1 + 1];
-        s_data[2 * (row + half_step)] = d_r[idx2];
-        s_data[2 * (row + half_step) + 1] = d_r[idx2 + 1];
-        __syncthreads(); // Ensure all threads load data before computing
-
-        // Perform FFT in shared memory
-        float angle = -2.0f * M_PI * row / step;
-        float t_real = cosf(angle);
-        float t_imag = sinf(angle);
-
-        float u_real = s_data[2 * row];
-        float u_imag = s_data[2 * row + 1];
-        float v_real = s_data[2 * (row + half_step)];
-        float v_imag = s_data[2 * (row + half_step) + 1];
-
-        float tr = t_real * v_real - t_imag * v_imag;
-        float ti = t_real * v_imag + t_imag * v_real;
-
-        s_data[2 * row] = u_real + tr;
-        s_data[2 * row + 1] = u_imag + ti;
-        s_data[2 * (row + half_step)] = u_real - tr;
-        s_data[2 * (row + half_step) + 1] = u_imag - ti;
-        __syncthreads(); // Synchronize before writing back to global memory
-
-        // Write back from shared memory to global memory
-        d_r[idx1] = s_data[2 * row];
-        d_r[idx1 + 1] = s_data[2 * row + 1];
-        d_r[idx2] = s_data[2 * (row + half_step)];
-        d_r[idx2 + 1] = s_data[2 * (row + half_step) + 1];
+__global__ void fft_warp_optimized(float* d_r, int width, int height, int step, bool is_row) {
+    extern __shared__ float s_data[];
+    volatile float* s_real = s_data;
+    volatile float* s_imag = s_data + blockDim.x;
+    
+    const int idx = is_row ? blockIdx.x : blockIdx.y;
+    const int tid = threadIdx.x;
+    const int stride = is_row ? width : height;
+    
+    if (idx >= (is_row ? height : width)) return;
+    
+    // Load data
+    for (int i = tid; i < stride; i += blockDim.x) {
+        const int global_idx = is_row ? 
+            (idx * width + i) * 2 : 
+            (i * width + idx) * 2;
+        s_real[i] = d_r[global_idx];
+        s_imag[i] = d_r[global_idx + 1];
     }
-}
-
-// Function to determine matrix dimensions from file
-void get_matrix_dimensions(const char* filename, int &width, int &height) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Cannot open file " << filename << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Read first line to determine width
-    std::string line;
-    if (getline(file, line)) {
-        std::istringstream iss(line);
-        float value;
-        width = 0;
-        while (iss >> value) {
-            ++width;
+    __syncthreads();
+    
+    // Warp-level FFT
+    for (int s = 1; s <= 32 && s <= stride/2; s *= 2) {
+        if (tid < stride/2) {
+            warp_butterfly(s_real, s_imag, tid, s);
         }
+        __syncwarp();
     }
-
-    // Count newlines to determine height
-    height = 1; // We already read one line
-    while (getline(file, line)) {
-        ++height;
+    
+    // Block-level FFT
+    for (int s = 64; s <= stride; s *= 2) {
+        for (int i = tid; i < stride/2; i += blockDim.x) {
+            warp_butterfly(s_real, s_imag, i, s);
+        }
+        __syncthreads();
     }
-
-    file.close();
+    
+    // Store results
+    for (int i = tid; i < stride; i += blockDim.x) {
+        const int global_idx = is_row ? 
+            (idx * width + i) * 2 : 
+            (i * width + idx) * 2;
+        d_r[global_idx] = s_real[i];
+        d_r[global_idx + 1] = s_imag[i];
+    }
 }
 
-// 2D FFT function with shared memory optimization
-void fft_2d(float* d_data, int width, int height) {
-    size_t shared_memory_size = width * 2 * sizeof(float);
-
+void compute_2d_fft(float* d_data, int width, int height) {
+    // Use warp size for block dimension to optimize warp-level operations
+    dim3 block(32);  // CUDA warp size
+    dim3 grid(height, 1);  // For row-wise FFT
+    
+    // Calculate shared memory size - need double the space for separate real/imaginary arrays
+    size_t shared_mem_size = 2 * std::max(width, height) * sizeof(float);
+    
+    // Row-wise FFT
     for (int step = 2; step <= width; step <<= 1) {
-        fft_1d_row<<<height, width / 2, shared_memory_size>>>(d_data, width, height, step);
-        cudaDeviceSynchronize();
+        fft_warp_optimized<<<grid, block, shared_mem_size>>>(
+            d_data, width, height, step, true);
+        CHECK_CUDA(cudaDeviceSynchronize());
     }
+    
+    // Reconfigure grid for column-wise FFT
+    grid.x = width;
+    grid.y = 1;
+    
+    // Column-wise FFT
     for (int step = 2; step <= height; step <<= 1) {
-        fft_1d_column<<<width, height / 2, shared_memory_size>>>(d_data, width, height, step);
-        cudaDeviceSynchronize();
+        fft_warp_optimized<<<grid, block, shared_mem_size>>>(
+            d_data, width, height, step, false);
+        CHECK_CUDA(cudaDeviceSynchronize());
     }
 }
 
-// Main function
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        cerr << "Usage: " << argv[0] << " <input_directory>" << endl;
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
         return 1;
     }
 
-    const char* directory_path = argv[1];
-    DIR* dir = opendir(directory_path);
-    if (!dir) {
-        cerr << "Error: Cannot open directory " << directory_path << endl;
+    // Get matrix dimensions
+    int width, height;
+    get_matrix_dimensions(argv[1], width, height);
+    std::cout << "Processing matrix of size " << width << "x" << height << std::endl;
+
+    // Check if dimensions are compatible with warp-level operations
+    if (width % 32 != 0 || height % 32 != 0) {
+        std::cout << "Warning: Matrix dimensions not multiples of warp size (32). "
+                  << "Performance may be suboptimal." << std::endl;
+    }
+
+    // Read input data
+    std::vector<float> h_data;
+    if (!read_matrix_data(argv[1], h_data, width, height)) {
         return 1;
     }
 
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        // Process only .dat files
-        if (strstr(entry->d_name, ".dat") != NULL) {
-            string input_filepath = string(directory_path) + "/" + entry->d_name;
+    // Allocate device memory
+    float* d_data;
+    size_t size = width * height * 2 * sizeof(float);
+    CHECK_CUDA(cudaMalloc(&d_data, size));
 
-            // Determine matrix dimensions
-            int width, height;
-            get_matrix_dimensions(input_filepath.c_str(), width, height);
-            cout << "Processing " << entry->d_name << " with dimensions: " << width << "x" << height << endl;
+    // Create events for timing
+    cudaEvent_t start, stop;
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&stop));
 
-            int size = width * height * 2;
-            float* h_data = new float[size];
+    // Start timing
+    CHECK_CUDA(cudaEventRecord(start));
 
-            // Read matrix data from file
-            ifstream infile(input_filepath);
-            if (!infile.is_open()) {
-                cerr << "Error: Cannot open file " << input_filepath << endl;
-                delete[] h_data;
-                continue;
-            }
-            for (int i = 0; i < width * height; i++) {
-                infile >> h_data[i * 2];    // Real part
-                h_data[i * 2 + 1] = 0.0f;   // Imaginary part set to 0
-            }
-            infile.close();
+    // Use pinned memory for better transfer performance
+    float* h_pinned;
+    CHECK_CUDA(cudaMallocHost(&h_pinned, size));
+    std::memcpy(h_pinned, h_data.data(), size);
+    CHECK_CUDA(cudaMemcpy(d_data, h_pinned, size, cudaMemcpyHostToDevice));
 
-            // Allocate device memory
-            float* d_data;
-            cudaMalloc(&d_data, size * sizeof(float));
+    // Perform FFT
+    compute_2d_fft(d_data, width, height);
 
-            // Start timing
-            auto start = chrono::high_resolution_clock::now();
+    // Copy result back to host
+    CHECK_CUDA(cudaMemcpy(h_pinned, d_data, size, cudaMemcpyDeviceToHost));
+    std::memcpy(h_data.data(), h_pinned, size);
 
-            // Copy data to device
-            cudaMemcpyAsync(d_data, h_data, size * sizeof(float), cudaMemcpyHostToDevice);
+    // Stop timing
+    CHECK_CUDA(cudaEventRecord(stop));
+    CHECK_CUDA(cudaEventSynchronize(stop));
 
-            // Perform 2D FFT on GPU
-            fft_2d(d_data, width, height);
+    float milliseconds = 0;
+    CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
+    std::cout << "Total execution time: " << milliseconds << " ms" << std::endl;
 
-            // Copy result back to host
-            cudaMemcpyAsync(h_data, d_data, size * sizeof(float), cudaMemcpyDeviceToHost);
-            cudaDeviceSynchronize();
+    // Cleanup
+    CHECK_CUDA(cudaEventDestroy(start));
+    CHECK_CUDA(cudaEventDestroy(stop));
+    CHECK_CUDA(cudaFreeHost(h_pinned));
+    CHECK_CUDA(cudaFree(d_data));
 
-            // Stop timing
-            auto finish = chrono::high_resolution_clock::now();
-            auto duration = chrono::duration_cast<chrono::microseconds>(finish - start).count();
-            cout << "Elapsed time for " << entry->d_name << " (including memcpy): " << duration / 1e6 << " seconds" << endl;
-
-            // Create output filename
-            string output_filename = string(entry->d_name) + ".out";
-            ofstream outfile(output_filename);
-            outfile.precision(6);
-            outfile << "2D FFT Output (partial):" << endl;
-            for (int i = 0; i < min(5, height); i++) {
-                for (int j = 0; j < min(5, width); j++) {
-                    float real_part = h_data[(i * width + j) * 2];
-                    float imag_part = h_data[(i * width + j) * 2 + 1];
-                    outfile << "X[" << i << "][" << j << "] = " << real_part << " + " << imag_part << "i\t";
-                }
-                outfile << endl;
-            }
-            outfile.close();
-
-            // Free memory
-            delete[] h_data;
-            cudaFree(d_data);
-        }
-    }
-    closedir(dir);
     return 0;
 }
