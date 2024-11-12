@@ -127,24 +127,13 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct"
             --csv
             --log-file ${EVAL_DIR}/${impl}_memtrans.csv
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    # Data processing for averages
-    add_custom_command(
-        OUTPUT ${EVAL_DIR}/${impl}_memtrans_avg.csv
-        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_memtrans.csv ${EVAL_DIR}/${impl}_memtrans_avg.csv
+    add_custom_target(${impl}_memtrans
         DEPENDS ${EVAL_DIR}/${impl}_memtrans.csv
-        COMMENT "Processing NCU CSV data to compute averages for ${impl}_memtrans"
     )
-
-    add_custom_target(${impl}_memtrans_avg
-        DEPENDS ${EVAL_DIR}/${impl}_memtrans_avg.csv
-    )
-
-    # Similar commands for throughput, cache, and occupancy analyses
-    # Adjusted to use --csv and --log-file instead of --export-format
 
     # Memory throughput analysis
     add_custom_command(
@@ -159,19 +148,12 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       lts__throughput.avg.pct_of_peak_sustained_elapsed"
             --csv
             --log-file ${EVAL_DIR}/${impl}_throughput.csv
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    add_custom_command(
-        OUTPUT ${EVAL_DIR}/${impl}_throughput_avg.csv
-        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_throughput.csv ${EVAL_DIR}/${impl}_throughput_avg.csv
+    add_custom_target(${impl}_throughput
         DEPENDS ${EVAL_DIR}/${impl}_throughput.csv
-        COMMENT "Processing NCU CSV data to compute averages for ${impl}_throughput"
-    )
-
-    add_custom_target(${impl}_throughput_avg
-        DEPENDS ${EVAL_DIR}/${impl}_throughput_avg.csv
     )
 
     # Cache and compute efficiency analysis
@@ -187,19 +169,12 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
             --csv
             --log-file ${EVAL_DIR}/${impl}_cache.csv
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    add_custom_command(
-        OUTPUT ${EVAL_DIR}/${impl}_cache_avg.csv
-        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_cache.csv ${EVAL_DIR}/${impl}_cache_avg.csv
+    add_custom_target(${impl}_cache
         DEPENDS ${EVAL_DIR}/${impl}_cache.csv
-        COMMENT "Processing NCU CSV data to compute averages for ${impl}_cache"
-    )
-
-    add_custom_target(${impl}_cache_avg
-        DEPENDS ${EVAL_DIR}/${impl}_cache_avg.csv
     )
 
     # Occupancy and launch statistics
@@ -214,28 +189,21 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
             --csv
             --log-file ${EVAL_DIR}/${impl}_occupancy.csv
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    add_custom_command(
-        OUTPUT ${EVAL_DIR}/${impl}_occupancy_avg.csv
-        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_occupancy.csv ${EVAL_DIR}/${impl}_occupancy_avg.csv
+    add_custom_target(${impl}_occupancy
         DEPENDS ${EVAL_DIR}/${impl}_occupancy.csv
-        COMMENT "Processing NCU CSV data to compute averages for ${impl}_occupancy"
-    )
-
-    add_custom_target(${impl}_occupancy_avg
-        DEPENDS ${EVAL_DIR}/${impl}_occupancy_avg.csv
     )
 
     # Full analysis target
     add_custom_target(${impl}_analysis
         DEPENDS 
-            ${impl}_memtrans_avg
-            ${impl}_throughput_avg
-            ${impl}_cache_avg
-            ${impl}_occupancy_avg
+            ${impl}_memtrans
+            ${impl}_throughput
+            ${impl}_cache
+            ${impl}_occupancy
     )
 endforeach()
 
@@ -270,10 +238,10 @@ foreach(size ${LARGE_SIZES})
     add_dependencies(benchmark_large run_all_${size})
 endforeach()
 
-# Add comprehensive report target
+# Add comprehensive report target (optional, concatenates CSV files)
 add_custom_target(generate_report
     COMMAND ${CMAKE_COMMAND} -E echo "Generating performance report..."
-    COMMAND ${CMAKE_COMMAND} -E cat ${EVAL_DIR}/*_avg.csv > ${EVAL_DIR}/comprehensive_report.csv
+    COMMAND ${CMAKE_COMMAND} -E cat ${EVAL_DIR}/*.csv > ${EVAL_DIR}/comprehensive_report.csv
     DEPENDS analyze_all
 )
 
