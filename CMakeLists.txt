@@ -42,7 +42,7 @@ target_link_libraries(fft_cufft PRIVATE cufft)
 
 # Set CUDA properties
 foreach(target fft_stage0 fft_stage1 fft_stage2 fft_stage3 fft_cufft)
-    set_target_properties(${target} PROPERTIES 
+    set_target_properties(${target} PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
     )
 endforeach()
@@ -76,27 +76,25 @@ file(MAKE_DIRECTORY ${INPUT_DIR})
 add_custom_target(create_small_inputs
     DEPENDS ${INPUT_FILES}
 )
-
 add_custom_target(create_large_inputs
     DEPENDS ${LARGE_INPUT_FILES}
 )
-
 add_custom_target(create_all_inputs
     DEPENDS create_small_inputs create_large_inputs
 )
 
-# Add run targets
-foreach(size ${SMALL_SIZES})
+# Function to add run targets for a given size
+function(add_size_targets size)
     foreach(impl cpu stage0 stage1 stage2 stage3 cufft)
         add_custom_target(run_${impl}_${size}
             COMMAND fft_${impl} ${INPUT_DIR}/${size}x${size}_matrix.dat
             DEPENDS fft_${impl} ${INPUT_DIR}/${size}x${size}_matrix.dat
         )
     endforeach()
-    
-    # Add combined target for each size
+
+    # Add combined target for the size
     add_custom_target(run_all_${size}
-        DEPENDS 
+        DEPENDS
             run_cpu_${size}
             run_stage0_${size}
             run_stage1_${size}
@@ -104,6 +102,68 @@ foreach(size ${SMALL_SIZES})
             run_stage3_${size}
             run_cufft_${size}
     )
+endfunction()
+
+# Add run targets for both small and large sizes
+foreach(size ${SMALL_SIZES})
+    add_size_targets(${size})
 endforeach()
 
-# Analysis targets remain the same...
+foreach(size ${LARGE_SIZES})
+    add_size_targets(${size})
+endforeach()
+
+# Add performance analysis targets
+foreach(impl stage0 stage1 stage2 stage3 cufft)
+    # Memory transaction analysis
+    add_custom_target(${impl}_memtrans
+        COMMAND ncu --metrics "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,\
+            l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,\
+            l1tex__t_sector_hit_rate.pct,\
+            lts__t_sector_hit_rate.pct"
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+    )
+
+    # Memory throughput analysis
+    add_custom_target(${impl}_throughput
+        COMMAND ncu --metrics "dram__bytes_read.sum,\
+            dram__bytes_write.sum,\
+            dram__throughput.avg.pct_of_peak_sustained_elapsed"
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+    )
+
+    # Cache efficiency analysis
+    add_custom_target(${impl}_cache
+        COMMAND ncu --metrics "l1tex__t_hit_rate.pct,\
+            lts__t_hit_rate.pct,\
+            l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+    )
+
+    # Full analysis target
+    add_custom_target(${impl}_analysis
+        DEPENDS 
+            ${impl}_memtrans
+            ${impl}_throughput
+            ${impl}_cache
+    )
+endforeach()
+
+# Add target to analyze all implementations
+add_custom_target(analyze_all
+    DEPENDS 
+        stage0_analysis
+        stage1_analysis
+        stage2_analysis
+        stage3_analysis
+        cufft_analysis
+)
+
+# Optional: Add a target to run all sizes
+add_custom_target(run_all_sizes)
+foreach(size ${SMALL_SIZES} ${LARGE_SIZES})
+    add_dependencies(run_all_sizes run_all_${size})
+endforeach()
