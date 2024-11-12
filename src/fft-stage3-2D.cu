@@ -1,227 +1,231 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cmath>
+#include <chrono>
 #include <cuda_runtime.h>
-#include <cuda_profiler_api.h>
-#include <cufft.h>
-#include <nvToolsExt.h>
+#include <dirent.h>  // For directory handling
+#include <cstring>
 
-// Constants for multi-GPU management
-#define MAX_GPUS 8
-#define PROFILING_ENABLED 1
-#define ERROR_CHECK 1
+using namespace std;
 
-// Error checking macro
-#define CHECK_CUDA(call) \
-    do { \
-        cudaError_t err = call; \
-        if (err != cudaSuccess) { \
-            fprintf(stderr, "CUDA error in %s:%d: %s\n", __FILE__, __LINE__, \
-                    cudaGetErrorString(err)); \
-            exit(EXIT_FAILURE); \
-        } \
-    } while(0)
+#define M_PI 3.14159265358979323846
 
-// Structure for GPU context
-struct GPUContext {
-    int device_id;
-    cudaStream_t stream;
-    cufftHandle plan;
-    float2* d_data;
-    int chunk_size;
-};
+// CUDA Kernel for 1D FFT on rows using shared memory
+__global__ void fft_1d_row(float* d_r, int width, int height, int step) {
+    extern __shared__ float s_data[]; // Shared memory for row data
+    int row = blockIdx.x;
+    int col = threadIdx.x;
 
-// Performance monitoring structure
-struct PerfMetrics {
-    float transfer_time;
-    float compute_time;
-    float total_time;
-    float throughput;
-};
+    int half_step = step / 2;
+    if (col < half_step && row < height) {
+        int idx1 = row * width * 2 + col * 2;
+        int idx2 = idx1 + step * 2;
 
-class FFT2DMultiGPU {
-private:
-    GPUContext* contexts;
-    int num_gpus;
-    int width;
-    int height;
-    PerfMetrics metrics;
-    
-    // Advanced memory management
-    cudaMemPool_t mem_pool[MAX_GPUS];
-    
-public:
-    FFT2DMultiGPU(int w, int h) : width(w), height(h) {
-        // Initialize available GPUs
-        CHECK_CUDA(cudaGetDeviceCount(&num_gpus));
-        num_gpus = min(num_gpus, MAX_GPUS);
-        contexts = new GPUContext[num_gpus];
-        
-        // Initialize each GPU
-        for (int i = 0; i < num_gpus; i++) {
-            initializeGPU(i);
+        // Load to shared memory
+        s_data[2 * col] = d_r[idx1];
+        s_data[2 * col + 1] = d_r[idx1 + 1];
+        s_data[2 * (col + half_step)] = d_r[idx2];
+        s_data[2 * (col + half_step) + 1] = d_r[idx2 + 1];
+        __syncthreads(); // Ensure all threads load data before computing
+
+        // Perform FFT in shared memory
+        float angle = -2.0f * M_PI * col / step;
+        float t_real = cosf(angle);
+        float t_imag = sinf(angle);
+
+        float u_real = s_data[2 * col];
+        float u_imag = s_data[2 * col + 1];
+        float v_real = s_data[2 * (col + half_step)];
+        float v_imag = s_data[2 * (col + half_step) + 1];
+
+        float tr = t_real * v_real - t_imag * v_imag;
+        float ti = t_real * v_imag + t_imag * v_real;
+
+        s_data[2 * col] = u_real + tr;
+        s_data[2 * col + 1] = u_imag + ti;
+        s_data[2 * (col + half_step)] = u_real - tr;
+        s_data[2 * (col + half_step) + 1] = u_imag - ti;
+        __syncthreads(); // Synchronize before writing back to global memory
+
+        // Write back from shared memory to global memory
+        d_r[idx1] = s_data[2 * col];
+        d_r[idx1 + 1] = s_data[2 * col + 1];
+        d_r[idx2] = s_data[2 * (col + half_step)];
+        d_r[idx2 + 1] = s_data[2 * (col + half_step) + 1];
+    }
+}
+
+// CUDA Kernel for 1D FFT on columns using shared memory
+__global__ void fft_1d_column(float* d_r, int width, int height, int step) {
+    extern __shared__ float s_data[]; // Shared memory for column data
+    int col = blockIdx.x;
+    int row = threadIdx.x;
+
+    int half_step = step / 2;
+    if (row < half_step && col < width) {
+        int idx1 = col * 2 + row * width * 2;
+        int idx2 = idx1 + step * width * 2;
+
+        // Load to shared memory
+        s_data[2 * row] = d_r[idx1];
+        s_data[2 * row + 1] = d_r[idx1 + 1];
+        s_data[2 * (row + half_step)] = d_r[idx2];
+        s_data[2 * (row + half_step) + 1] = d_r[idx2 + 1];
+        __syncthreads(); // Ensure all threads load data before computing
+
+        // Perform FFT in shared memory
+        float angle = -2.0f * M_PI * row / step;
+        float t_real = cosf(angle);
+        float t_imag = sinf(angle);
+
+        float u_real = s_data[2 * row];
+        float u_imag = s_data[2 * row + 1];
+        float v_real = s_data[2 * (row + half_step)];
+        float v_imag = s_data[2 * (row + half_step) + 1];
+
+        float tr = t_real * v_real - t_imag * v_imag;
+        float ti = t_real * v_imag + t_imag * v_real;
+
+        s_data[2 * row] = u_real + tr;
+        s_data[2 * row + 1] = u_imag + ti;
+        s_data[2 * (row + half_step)] = u_real - tr;
+        s_data[2 * (row + half_step) + 1] = u_imag - ti;
+        __syncthreads(); // Synchronize before writing back to global memory
+
+        // Write back from shared memory to global memory
+        d_r[idx1] = s_data[2 * row];
+        d_r[idx1 + 1] = s_data[2 * row + 1];
+        d_r[idx2] = s_data[2 * (row + half_step)];
+        d_r[idx2 + 1] = s_data[2 * (row + half_step) + 1];
+    }
+}
+
+// Function to determine matrix dimensions from file
+void get_matrix_dimensions(const char* filename, int &width, int &height) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Cannot open file " << filename << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    // Read first line to determine width
+    std::string line;
+    if (getline(file, line)) {
+        std::istringstream iss(line);
+        float value;
+        width = 0;
+        while (iss >> value) {
+            ++width;
         }
     }
-    
-    ~FFT2DMultiGPU() {
-        cleanup();
-    }
-    
-private:
-    void initializeGPU(int gpu_index) {
-        GPUContext& ctx = contexts[gpu_index];
-        ctx.device_id = gpu_index;
-        
-        // Set device and create stream
-        CHECK_CUDA(cudaSetDevice(gpu_index));
-        CHECK_CUDA(cudaStreamCreate(&ctx.stream));
-        
-        // Initialize memory pool
-        cudaMemPoolProps poolProps = {};
-        poolProps.allocType = cudaMemAllocationTypePinned;
-        poolProps.location.id = gpu_index;
-        poolProps.location.type = cudaMemLocationTypeDevice;
-        CHECK_CUDA(cudaMemPoolCreate(&mem_pool[gpu_index], &poolProps));
-        
-        // Calculate chunk size for this GPU
-        ctx.chunk_size = (height / num_gpus) + (gpu_index < (height % num_gpus) ? 1 : 0);
-        
-        // Allocate device memory from pool
-        size_t size = ctx.chunk_size * width * sizeof(float2);
-        CHECK_CUDA(cudaMallocFromPool((void**)&ctx.d_data, size, mem_pool[gpu_index]));
-        
-        // Create CUFFT plan
-        CHECK_CUDA(cufftCreate(&ctx.plan));
-        CHECK_CUDA(cufftSetStream(ctx.plan, ctx.stream));
-    }
-    
-    void cleanup() {
-        for (int i = 0; i < num_gpus; i++) {
-            cudaSetDevice(contexts[i].device_id);
-            cufftDestroy(contexts[i].plan);
-            cudaFree(contexts[i].d_data);
-            cudaStreamDestroy(contexts[i].stream);
-            cudaMemPoolDestroy(mem_pool[i]);
-        }
-        delete[] contexts;
+
+    // Count newlines to determine height
+    height = 1; // We already read one line
+    while (getline(file, line)) {
+        ++height;
     }
 
-public:
-    void execute(float2* h_data, float2* h_result) {
-        cudaEvent_t start, stop;
-        cudaEventCreate(&start);
-        cudaEventCreate(&stop);
-        cudaEventRecord(start);
-        
-        #pragma omp parallel num_threads(num_gpus)
-        {
-            int gpu_id = omp_get_thread_num();
-            GPUContext& ctx = contexts[gpu_id];
-            
-            // Set device for this thread
-            CHECK_CUDA(cudaSetDevice(ctx.device_id));
-            
-            // Calculate offset and size for this GPU's chunk
-            size_t offset = 0;
-            for (int i = 0; i < gpu_id; i++) {
-                offset += contexts[i].chunk_size;
+    file.close();
+}
+
+// 2D FFT function with shared memory optimization
+void fft_2d(float* d_data, int width, int height) {
+    size_t shared_memory_size = width * 2 * sizeof(float);
+
+    for (int step = 2; step <= width; step <<= 1) {
+        fft_1d_row<<<height, width / 2, shared_memory_size>>>(d_data, width, height, step);
+        cudaDeviceSynchronize();
+    }
+    for (int step = 2; step <= height; step <<= 1) {
+        fft_1d_column<<<width, height / 2, shared_memory_size>>>(d_data, width, height, step);
+        cudaDeviceSynchronize();
+    }
+}
+
+// Main function
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        cerr << "Usage: " << argv[0] << " <input_directory>" << endl;
+        return 1;
+    }
+
+    const char* directory_path = argv[1];
+    DIR* dir = opendir(directory_path);
+    if (!dir) {
+        cerr << "Error: Cannot open directory " << directory_path << endl;
+        return 1;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Process only .dat files
+        if (strstr(entry->d_name, ".dat") != NULL) {
+            string input_filepath = string(directory_path) + "/" + entry->d_name;
+
+            // Determine matrix dimensions
+            int width, height;
+            get_matrix_dimensions(input_filepath.c_str(), width, height);
+            cout << "Processing " << entry->d_name << " with dimensions: " << width << "x" << height << endl;
+
+            int size = width * height * 2;
+            float* h_data = new float[size];
+
+            // Read matrix data from file
+            ifstream infile(input_filepath);
+            if (!infile.is_open()) {
+                cerr << "Error: Cannot open file " << input_filepath << endl;
+                delete[] h_data;
+                continue;
             }
-            
-            // Profile memory transfer
-            nvtxRangePush("Memory Transfer to GPU");
-            CHECK_CUDA(cudaMemcpyAsync(ctx.d_data, 
-                                     h_data + offset * width,
-                                     ctx.chunk_size * width * sizeof(float2),
-                                     cudaMemcpyHostToDevice, 
-                                     ctx.stream));
-            nvtxRangePop();
-            
-            // Execute row-wise FFT
-            nvtxRangePush("Row FFT");
-            executeRowFFT(ctx);
-            nvtxRangePop();
-            
-            // Synchronize for transpose
-            #pragma omp barrier
-            
-            // Global transpose and column FFT
-            nvtxRangePush("Column FFT");
-            executeColumnFFT(ctx);
-            nvtxRangePop();
-            
-            // Transfer results back
-            nvtxRangePush("Memory Transfer to Host");
-            CHECK_CUDA(cudaMemcpyAsync(h_result + offset * width,
-                                     ctx.d_data,
-                                     ctx.chunk_size * width * sizeof(float2),
-                                     cudaMemcpyDeviceToHost,
-                                     ctx.stream));
-            nvtxRangePop();
-        }
-        
-        // Record timing
-        cudaEventRecord(stop);
-        cudaEventSynchronize(stop);
-        float milliseconds = 0;
-        cudaEventElapsedTime(&milliseconds, start, stop);
-        
-        updateMetrics(milliseconds);
-    }
-    
-private:
-    void executeRowFFT(GPUContext& ctx) {
-        dim3 block(MAX_BLOCK_SIZE);
-        dim3 grid((ctx.chunk_size + block.x - 1) / block.x);
-        
-        for (int stage = 1; stage <= log2(width); stage++) {
-            fft_butterfly_rows_optimized_v2<<<grid, block, 0, ctx.stream>>>(
-                ctx.d_data, width, ctx.chunk_size, stage, 1 << (stage - 1));
-        }
-    }
-    
-    void executeColumnFFT(GPUContext& ctx) {
-        dim3 block(MAX_BLOCK_SIZE);
-        dim3 grid((width + block.x - 1) / block.x);
-        
-        for (int stage = 1; stage <= log2(height); stage++) {
-            fft_butterfly_columns_optimized_v2<<<grid, block, 0, ctx.stream>>>(
-                ctx.d_data, width, ctx.chunk_size, stage, 1 << (stage - 1));
-        }
-    }
-    
-    void updateMetrics(float milliseconds) {
-        metrics.total_time = milliseconds / 1000.0f;
-        metrics.throughput = (width * height * sizeof(float2)) / 
-                           (metrics.total_time * 1e9); // GB/s
-    }
-    
-public:
-    PerfMetrics getPerformanceMetrics() const {
-        return metrics;
-    }
-};
+            for (int i = 0; i < width * height; i++) {
+                infile >> h_data[i * 2];    // Real part
+                h_data[i * 2 + 1] = 0.0f;   // Imaginary part set to 0
+            }
+            infile.close();
 
-// Main execution function
-void compute_2d_multi_gpu(float* buffer, int rows, int cols, int sample_rate, const char* filename) {
-    // Convert input to complex format
-    float2* h_data = new float2[rows * cols];
-    for (int i = 0; i < rows * cols; i++) {
-        h_data[i].x = buffer[i];
-        h_data[i].y = 0.0f;
+            // Allocate device memory
+            float* d_data;
+            cudaMalloc(&d_data, size * sizeof(float));
+
+            // Start timing
+            auto start = chrono::high_resolution_clock::now();
+
+            // Copy data to device
+            cudaMemcpyAsync(d_data, h_data, size * sizeof(float), cudaMemcpyHostToDevice);
+
+            // Perform 2D FFT on GPU
+            fft_2d(d_data, width, height);
+
+            // Copy result back to host
+            cudaMemcpyAsync(h_data, d_data, size * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+
+            // Stop timing
+            auto finish = chrono::high_resolution_clock::now();
+            auto duration = chrono::duration_cast<chrono::microseconds>(finish - start).count();
+            cout << "Elapsed time for " << entry->d_name << " (including memcpy): " << duration / 1e6 << " seconds" << endl;
+
+            // Create output filename
+            string output_filename = string(entry->d_name) + ".out";
+            ofstream outfile(output_filename);
+            outfile.precision(6);
+            outfile << "2D FFT Output (partial):" << endl;
+            for (int i = 0; i < min(5, height); i++) {
+                for (int j = 0; j < min(5, width); j++) {
+                    float real_part = h_data[(i * width + j) * 2];
+                    float imag_part = h_data[(i * width + j) * 2 + 1];
+                    outfile << "X[" << i << "][" << j << "] = " << real_part << " + " << imag_part << "i\t";
+                }
+                outfile << endl;
+            }
+            outfile.close();
+
+            // Free memory
+            delete[] h_data;
+            cudaFree(d_data);
+        }
     }
-    
-    float2* h_result = new float2[rows * cols];
-    
-    // Create and execute multi-GPU FFT
-    FFT2DMultiGPU fft(cols, rows);
-    fft.execute(h_data, h_result);
-    
-    // Get performance metrics
-    PerfMetrics metrics = fft.getPerformanceMetrics();
-    printf("Performance Metrics:\n");
-    printf("Total Time: %.3f seconds\n", metrics.total_time);
-    printf("Throughput: %.2f GB/s\n", metrics.throughput);
-    
-    // Save results
-    saveResults(h_result, rows, cols, filename);
-    
-    delete[] h_data;
-    delete[] h_result;
+    closedir(dir);
+    return 0;
 }
