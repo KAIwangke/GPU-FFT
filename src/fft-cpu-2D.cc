@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    std::cout << "Total execution time: " << duration.count() << " ms" << std::endl;
+    std::cout << "CPU: Total execution time: " << duration.count() << " ms" << std::endl;
+
     return 0;
 }

@@ -114,7 +114,8 @@ int main(int argc, char** argv) {
 
     float milliseconds = 0;
     CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
-    std::cout << "Total execution time: " << milliseconds << " ms" << std::endl;
+    std::cout << "Stage1: Total execution time: " << milliseconds << " ms" << std::endl;
+    
 
     // Cleanup
     CHECK_CUDA(cudaEventDestroy(start));

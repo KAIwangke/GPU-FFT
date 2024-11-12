@@ -54,7 +54,7 @@ void compute_2d_fft_cufft(const std::vector<float>& h_data, int width, int heigh
 
     float milliseconds = 0;
     CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
-    std::cout << "Total execution time: " << milliseconds << " ms" << std::endl;
+    std::cout << "CUFFT: Total execution time: " << milliseconds << " ms" << std::endl;
 
     // Cleanup
     cufftDestroy(plan);
