@@ -143,7 +143,6 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
             l1tex__throughput.avg.pct_of_peak_sustained_elapsed,\
             sm__warps_active.avg.pct_of_peak_sustained_active,\
             sm__sass_thread_inst_executed_per_launched_thread.ratio"
-            --kernel-regex ".*"
             --aggregate-mode average
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
