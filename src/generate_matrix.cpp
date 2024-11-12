@@ -6,15 +6,21 @@
 #include <filesystem>
 
 void generate_matrix(int size) {
-    std::string filename = std::to_string(size) + "x" + std::to_string(size) + "_matrix.dat";
-    std::ofstream outfile(filename);
+    std::filesystem::create_directory("input");
+    std::string filename = "input/" + std::to_string(size) + "x" + std::to_string(size) + "_matrix.dat";
     
+    // Check if file already exists
+    if (std::filesystem::exists(filename)) {
+        std::cout << "Matrix " << filename << " already exists, skipping.\n";
+        return;
+    }
+
+    std::ofstream outfile(filename);
     if (!outfile.is_open()) {
         std::cerr << "Error: Could not open file " << filename << " for writing.\n";
         return;
     }
     
-    // Generate random matrix data and write to file
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
             float real_part = static_cast<float>(rand() % 100);
@@ -26,18 +32,22 @@ void generate_matrix(int size) {
     std::cout << size << "x" << size << " random matrix written to " << filename << "\n";
 }
 
-int main() {
-    // Seed random number generator
+int main(int argc, char** argv) {
     srand(time(NULL));
     
-    // Create input directory if it doesn't exist
-    std::filesystem::create_directory("input");
-    
-    // Generate matrices for different sizes
+    #ifdef SINGLE_SIZE_MODE
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <size>\n";
+        return 1;
+    }
+    generate_matrix(std::atoi(argv[1]));
+    #else
+    // Original multiple size generation code
     int sizes[] = {32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384};
     for (int size : sizes) {
         generate_matrix(size);
     }
-    
+    #endif
+
     return 0;
 }
