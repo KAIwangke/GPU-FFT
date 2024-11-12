@@ -114,8 +114,9 @@ endforeach()
 # Add performance analysis targets with comprehensive metrics
 foreach(impl stage0 stage1 stage2 stage3 cufft)
     # Memory transaction analysis
-    add_custom_target(${impl}_memtrans
-        COMMAND ncu 
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_memtrans.ncu-rep
+        COMMAND ncu
             --set full
             --section MemoryWorkloadAnalysis
             --metrics "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,\
@@ -124,13 +125,30 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       lts__t_sector_hit_rate.pct,\
                       dram__sectors_per_request_umin.pct,\
                       smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct"
+            --export ${EVAL_DIR}/${impl}_memtrans.ncu-rep
+            --export-format csv
+            --replay-mode kernel
+            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
+    # Data processing for averages
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_memtrans_avg.csv
+        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_memtrans.ncu-rep ${EVAL_DIR}/${impl}_memtrans_avg.csv
+        DEPENDS ${EVAL_DIR}/${impl}_memtrans.ncu-rep
+        COMMENT "Processing NCU CSV data to compute averages for ${impl}_memtrans"
+    )
+
+    add_custom_target(${impl}_memtrans_avg
+        DEPENDS ${EVAL_DIR}/${impl}_memtrans_avg.csv
+    )
+
     # Memory throughput analysis
-    add_custom_target(${impl}_throughput
-        COMMAND ncu 
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_throughput.ncu-rep
+        COMMAND ncu
             --set full
             --section MemoryWorkloadAnalysis
             --metrics "dram__bytes_read.sum,\
@@ -138,13 +156,29 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       dram__throughput.avg.pct_of_peak_sustained_elapsed,\
                       l1tex__throughput.avg.pct_of_peak_sustained_elapsed,\
                       lts__throughput.avg.pct_of_peak_sustained_elapsed"
+            --export ${EVAL_DIR}/${impl}_throughput.ncu-rep
+            --export-format csv
+            --replay-mode kernel
+            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_throughput_avg.csv
+        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_throughput.ncu-rep ${EVAL_DIR}/${impl}_throughput_avg.csv
+        DEPENDS ${EVAL_DIR}/${impl}_throughput.ncu-rep
+        COMMENT "Processing NCU CSV data to compute averages for ${impl}_throughput"
+    )
+
+    add_custom_target(${impl}_throughput_avg
+        DEPENDS ${EVAL_DIR}/${impl}_throughput_avg.csv
+    )
+
     # Cache and compute efficiency analysis
-    add_custom_target(${impl}_cache
-        COMMAND ncu 
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_cache.ncu-rep
+        COMMAND ncu
             --set full
             --section SpeedOfLight_RooflineChart
             --metrics "l1tex__t_hit_rate.pct,\
@@ -152,30 +186,61 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       sm__warps_active.avg.pct_of_peak_sustained_active,\
                       sm__sass_thread_inst_executed_per_launched_thread.ratio,\
                       l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
+            --export ${EVAL_DIR}/${impl}_cache.ncu-rep
+            --export-format csv
+            --replay-mode kernel
+            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_cache_avg.csv
+        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_cache.ncu-rep ${EVAL_DIR}/${impl}_cache_avg.csv
+        DEPENDS ${EVAL_DIR}/${impl}_cache.ncu-rep
+        COMMENT "Processing NCU CSV data to compute averages for ${impl}_cache"
+    )
+
+    add_custom_target(${impl}_cache_avg
+        DEPENDS ${EVAL_DIR}/${impl}_cache_avg.csv
+    )
+
     # Occupancy and launch statistics
-    add_custom_target(${impl}_occupancy
-        COMMAND ncu 
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_occupancy.ncu-rep
+        COMMAND ncu
             --set full
             --section LaunchStats
             --metrics "sm__threads_launched_per_multiprocessor.avg,\
                       sm__warps_active.avg.pct_of_peak_sustained_active,\
                       sm__maximum_warps_per_active_cycle_pct,\
                       l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
+            --export ${EVAL_DIR}/${impl}_occupancy.ncu-rep
+            --export-format csv
+            --replay-mode kernel
+            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
+    )
+
+    add_custom_command(
+        OUTPUT ${EVAL_DIR}/${impl}_occupancy_avg.csv
+        COMMAND python ${CMAKE_SOURCE_DIR}/process_ncu_csv.py ${EVAL_DIR}/${impl}_occupancy.ncu-rep ${EVAL_DIR}/${impl}_occupancy_avg.csv
+        DEPENDS ${EVAL_DIR}/${impl}_occupancy.ncu-rep
+        COMMENT "Processing NCU CSV data to compute averages for ${impl}_occupancy"
+    )
+
+    add_custom_target(${impl}_occupancy_avg
+        DEPENDS ${EVAL_DIR}/${impl}_occupancy_avg.csv
     )
 
     # Full analysis target
     add_custom_target(${impl}_analysis
         DEPENDS 
-            ${impl}_memtrans
-            ${impl}_throughput
-            ${impl}_cache
-            ${impl}_occupancy
+            ${impl}_memtrans_avg
+            ${impl}_throughput_avg
+            ${impl}_cache_avg
+            ${impl}_occupancy_avg
     )
 endforeach()
 
@@ -213,6 +278,9 @@ endforeach()
 # Add comprehensive report target
 add_custom_target(generate_report
     COMMAND ${CMAKE_COMMAND} -E echo "Generating performance report..."
-    COMMAND ${CMAKE_COMMAND} -E cat ${EVAL_DIR}/*.txt > ${EVAL_DIR}/comprehensive_report.txt
+    COMMAND ${CMAKE_COMMAND} -E cat ${EVAL_DIR}/*_avg.csv > ${EVAL_DIR}/comprehensive_report.csv
     DEPENDS analyze_all
 )
+
+# Ensure that the evaluation directory exists
+file(MAKE_DIRECTORY ${EVAL_DIR})
