@@ -6,11 +6,11 @@
 
 #define M_PI 3.14159265358979323846
 
-void fft_1d(std::vector<float>& real, std::vector<float>& imag, int n) {
+// Simple 1D FFT implementation
+void fft_1d(float* real, float* imag, int n) {
     // Base case
     if (n <= 1) return;
 
-    // Split into even and odd
     std::vector<float> even_real(n/2), even_imag(n/2);
     std::vector<float> odd_real(n/2), odd_imag(n/2);
     
@@ -22,8 +22,8 @@ void fft_1d(std::vector<float>& real, std::vector<float>& imag, int n) {
     }
 
     // Recursive FFT on even and odd parts
-    fft_1d(even_real, even_imag, n/2);
-    fft_1d(odd_real, odd_imag, n/2);
+    fft_1d(even_real.data(), even_imag.data(), n/2);
+    fft_1d(odd_real.data(), odd_imag.data(), n/2);
 
     // Combine results
     for (int k = 0; k < n/2; k++) {
@@ -31,7 +31,6 @@ void fft_1d(std::vector<float>& real, std::vector<float>& imag, int n) {
         float cos_val = cosf(angle);
         float sin_val = sinf(angle);
         
-        // t = odd[k] * exp(-2πik/n)
         float t_real = cos_val * odd_real[k] - sin_val * odd_imag[k];
         float t_imag = cos_val * odd_imag[k] + sin_val * odd_real[k];
         
@@ -43,7 +42,7 @@ void fft_1d(std::vector<float>& real, std::vector<float>& imag, int n) {
     }
 }
 
-void compute_2d_fft_cpu(std::vector<float>& data, int width, int height) {
+void compute_2d_fft_cpu(float* data, int width, int height) {
     std::vector<float> real_row(width), imag_row(width);
     std::vector<float> real_col(height), imag_col(height);
     
@@ -56,7 +55,7 @@ void compute_2d_fft_cpu(std::vector<float>& data, int width, int height) {
         }
         
         // FFT on row
-        fft_1d(real_row, imag_row, width);
+        fft_1d(real_row.data(), imag_row.data(), width);
         
         // Write back row
         for (int j = 0; j < width; j++) {
@@ -74,7 +73,7 @@ void compute_2d_fft_cpu(std::vector<float>& data, int width, int height) {
         }
         
         // FFT on column
-        fft_1d(real_col, imag_col, height);
+        fft_1d(real_col.data(), imag_col.data(), height);
         
         // Write back column
         for (int i = 0; i < height; i++) {
