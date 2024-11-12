@@ -1,6 +1,4 @@
 #include "common.hpp"
-
-
 // Stage 2: Memory coalescing and bank conflict optimization
 __device__ inline void butterfly_operation(float& a_real, float& a_imag, 
                                          float& b_real, float& b_imag,

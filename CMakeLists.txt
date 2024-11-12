@@ -111,60 +111,40 @@ foreach(size ${SMALL_SIZES} ${LARGE_SIZES})
     add_size_targets(${size})
 endforeach()
 
-# Add performance analysis targets with comprehensive metrics
+# Add performance analysis targets
 foreach(impl stage0 stage1 stage2 stage3 cufft)
     # Memory transaction analysis
     add_custom_target(${impl}_memtrans
-        COMMAND ncu 
-            --set full
-            --section MemoryWorkloadAnalysis
-            --metrics "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,\
-                      l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,\
-                      l1tex__t_sector_hit_rate.pct,\
-                      lts__t_sector_hit_rate.pct,\
-                      dram__sectors_per_request_umin.pct,\
-                      smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct"
+        COMMAND ncu --metrics "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,\
+            l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,\
+            l1tex__t_sector_hit_rate.pct,\
+            lts__t_sector_hit_rate.pct" 
+            --kernel-regex ".*"
+            --aggregate-mode average
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    # Memory throughput analysis
+    # Memory throughput analysis  
     add_custom_target(${impl}_throughput
-        COMMAND ncu 
-            --set full
-            --section MemoryWorkloadAnalysis
-            --metrics "dram__bytes_read.sum,\
-                      dram__bytes_write.sum,\
-                      dram__throughput.avg.pct_of_peak_sustained_elapsed,\
-                      l1tex__throughput.avg.pct_of_peak_sustained_elapsed,\
-                      lts__throughput.avg.pct_of_peak_sustained_elapsed"
+        COMMAND ncu --metrics "dram__bytes_read.sum,\
+            dram__bytes_write.sum,\
+            dram__throughput.avg.pct_of_peak_sustained_elapsed"
+            --kernel-regex ".*"
+            --aggregate-mode average
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    # Cache and compute efficiency analysis
+    # Cache efficiency analysis
     add_custom_target(${impl}_cache
-        COMMAND ncu 
-            --set full
-            --section SpeedOfLight_RooflineChart
-            --metrics "l1tex__t_hit_rate.pct,\
-                      lts__t_hit_rate.pct,\
-                      sm__warps_active.avg.pct_of_peak_sustained_active,\
-                      sm__sass_thread_inst_executed_per_launched_thread.ratio,\
-                      l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
-    )
-
-    # Occupancy and launch statistics
-    add_custom_target(${impl}_occupancy
-        COMMAND ncu 
-            --set full
-            --section LaunchStats
-            --metrics "sm__threads_launched_per_multiprocessor.avg,\
-                      sm__warps_active.avg.pct_of_peak_sustained_active,\
-                      sm__maximum_warps_per_active_cycle_pct,\
-                      l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
+        COMMAND ncu --metrics "l1tex__t_hit_rate.pct,\
+            lts__t_hit_rate.pct,\
+            l1tex__throughput.avg.pct_of_peak_sustained_elapsed,\
+            sm__warps_active.avg.pct_of_peak_sustained_active,\
+            sm__sass_thread_inst_executed_per_launched_thread.ratio"
+            --kernel-regex ".*"
+            --aggregate-mode average
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
@@ -175,7 +155,6 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
             ${impl}_memtrans
             ${impl}_throughput
             ${impl}_cache
-            ${impl}_occupancy
     )
 endforeach()
 
