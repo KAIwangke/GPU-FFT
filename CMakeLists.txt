@@ -127,8 +127,6 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct"
             --csv
             --log-file ${EVAL_DIR}/${impl}_memtrans.csv
-            --replay-mode kernel
-            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
@@ -161,8 +159,6 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       lts__throughput.avg.pct_of_peak_sustained_elapsed"
             --csv
             --log-file ${EVAL_DIR}/${impl}_throughput.csv
-            --replay-mode kernel
-            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
@@ -191,8 +187,6 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
             --csv
             --log-file ${EVAL_DIR}/${impl}_cache.csv
-            --replay-mode kernel
-            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
@@ -220,8 +214,6 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
             --csv
             --log-file ${EVAL_DIR}/${impl}_occupancy.csv
-            --replay-mode kernel
-            --replay-count 10
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
