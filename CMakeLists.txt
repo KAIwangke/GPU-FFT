@@ -10,11 +10,16 @@ endif()
 find_package(CUDA REQUIRED)
 find_package(OpenMP)
 
-# Set compiler flags
+# Set compiler flags with optimizations
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 14)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 --use_fast_math --ptxas-options=-v")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
+
+# Enable CUDA compiler optimizations
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo --maxrregcount=64")
+endif()
 
 # Define directories
 set(INPUT_DIR ${CMAKE_SOURCE_DIR}/input)
@@ -24,7 +29,11 @@ set(EVAL_DIR ${CMAKE_BINARY_DIR}/eval_results)
 set(SMALL_SIZES 32 64 128 256 512 1024)
 set(LARGE_SIZES 2048 4096 8192 16384)
 
-# Add matrix generator executable first
+# Make sure directories exist
+file(MAKE_DIRECTORY ${INPUT_DIR})
+file(MAKE_DIRECTORY ${EVAL_DIR})
+
+# Add matrix generator executable
 add_executable(generate_matrix src/generate_matrix.cpp)
 target_link_libraries(generate_matrix PRIVATE stdc++fs)
 target_compile_definitions(generate_matrix PRIVATE SINGLE_SIZE_MODE)
@@ -37,50 +46,43 @@ add_executable(fft_stage2 src/fft-stage2-2D.cu)
 add_executable(fft_stage3 src/fft-stage3-2D.cu)
 add_executable(fft_cufft src/cufft2d.cu)
 
-# Link libraries
+# Set common compile definitions for CUDA kernels
+foreach(target fft_stage0 fft_stage1 fft_stage2 fft_stage3 fft_cufft)
+    target_compile_definitions(${target} PRIVATE 
+        CUDA_ARCH=${CMAKE_CUDA_ARCHITECTURES}
+        USE_SHARED_MEMORY
+        USE_PINNED_MEMORY
+    )
+endforeach()
+
+# Link libraries and set properties
 target_link_libraries(fft_cufft PRIVATE cufft)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(fft_cpu PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # Set CUDA properties
 foreach(target fft_stage0 fft_stage1 fft_stage2 fft_stage3 fft_cufft)
     set_target_properties(${target} PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
+        CUDA_RESOLVE_DEVICE_SYMBOLS ON
     )
 endforeach()
 
-# Create input generation targets for small sizes
-foreach(size ${SMALL_SIZES})
+# Create input generation targets for all sizes
+foreach(size ${SMALL_SIZES} ${LARGE_SIZES})
     add_custom_command(
         OUTPUT ${INPUT_DIR}/${size}x${size}_matrix.dat
         COMMAND ${CMAKE_BINARY_DIR}/generate_matrix ${size} ${CMAKE_SOURCE_DIR}
         DEPENDS generate_matrix
         COMMENT "Generating ${size}x${size} matrix if not exists"
     )
-    list(APPEND INPUT_FILES ${INPUT_DIR}/${size}x${size}_matrix.dat)
+    list(APPEND ALL_INPUT_FILES ${INPUT_DIR}/${size}x${size}_matrix.dat)
 endforeach()
-
-# Create input generation targets for large sizes
-foreach(size ${LARGE_SIZES})
-    add_custom_command(
-        OUTPUT ${INPUT_DIR}/${size}x${size}_matrix.dat
-        COMMAND ${CMAKE_BINARY_DIR}/generate_matrix ${size} ${CMAKE_SOURCE_DIR}
-        DEPENDS generate_matrix
-        COMMENT "Generating ${size}x${size} matrix if not exists"
-    )
-    list(APPEND LARGE_INPUT_FILES ${INPUT_DIR}/${size}x${size}_matrix.dat)
-endforeach()
-
-# Make sure input directory exists
-file(MAKE_DIRECTORY ${INPUT_DIR})
 
 # Create high-level input generation targets
-add_custom_target(create_small_inputs
-    DEPENDS ${INPUT_FILES}
-)
-add_custom_target(create_large_inputs
-    DEPENDS ${LARGE_INPUT_FILES}
-)
-add_custom_target(create_all_inputs
-    DEPENDS create_small_inputs create_large_inputs
+add_custom_target(create_all_inputs ALL
+    DEPENDS ${ALL_INPUT_FILES}
 )
 
 # Function to add run targets for a given size
@@ -104,41 +106,65 @@ function(add_size_targets size)
     )
 endfunction()
 
-# Add run targets for both small and large sizes
-foreach(size ${SMALL_SIZES})
+# Add run targets for all sizes
+foreach(size ${SMALL_SIZES} ${LARGE_SIZES})
     add_size_targets(${size})
 endforeach()
 
-foreach(size ${LARGE_SIZES})
-    add_size_targets(${size})
-endforeach()
-
-# Add performance analysis targets
+# Add performance analysis targets with comprehensive metrics
 foreach(impl stage0 stage1 stage2 stage3 cufft)
     # Memory transaction analysis
     add_custom_target(${impl}_memtrans
-        COMMAND ncu --metrics "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,\
-            l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,\
-            l1tex__t_sector_hit_rate.pct,\
-            lts__t_sector_hit_rate.pct"
+        COMMAND ncu 
+            --set full
+            --section MemoryWorkloadAnalysis
+            --metrics "l1tex__t_sectors_pipe_lsu_mem_global_op_ld.sum,\
+                      l1tex__t_sectors_pipe_lsu_mem_global_op_st.sum,\
+                      l1tex__t_sector_hit_rate.pct,\
+                      lts__t_sector_hit_rate.pct,\
+                      dram__sectors_per_request_umin.pct,\
+                      smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct"
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
     # Memory throughput analysis
     add_custom_target(${impl}_throughput
-        COMMAND ncu --metrics "dram__bytes_read.sum,\
-            dram__bytes_write.sum,\
-            dram__throughput.avg.pct_of_peak_sustained_elapsed"
+        COMMAND ncu 
+            --set full
+            --section MemoryWorkloadAnalysis
+            --metrics "dram__bytes_read.sum,\
+                      dram__bytes_write.sum,\
+                      dram__throughput.avg.pct_of_peak_sustained_elapsed,\
+                      l1tex__throughput.avg.pct_of_peak_sustained_elapsed,\
+                      lts__throughput.avg.pct_of_peak_sustained_elapsed"
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
 
-    # Cache efficiency analysis
+    # Cache and compute efficiency analysis
     add_custom_target(${impl}_cache
-        COMMAND ncu --metrics "l1tex__t_hit_rate.pct,\
-            lts__t_hit_rate.pct,\
-            l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
+        COMMAND ncu 
+            --set full
+            --section SpeedOfLight_RooflineChart
+            --metrics "l1tex__t_hit_rate.pct,\
+                      lts__t_hit_rate.pct,\
+                      sm__warps_active.avg.pct_of_peak_sustained_active,\
+                      sm__sass_thread_inst_executed_per_launched_thread.ratio,\
+                      l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+    )
+
+    # Occupancy and launch statistics
+    add_custom_target(${impl}_occupancy
+        COMMAND ncu 
+            --set full
+            --section LaunchStats
+            --metrics "sm__threads_launched_per_multiprocessor.avg,\
+                      sm__warps_active.avg.pct_of_peak_sustained_active,\
+                      sm__maximum_warps_per_active_cycle_pct,\
+                      l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
             $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
         DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
     )
@@ -149,6 +175,7 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
             ${impl}_memtrans
             ${impl}_throughput
             ${impl}_cache
+            ${impl}_occupancy
     )
 endforeach()
 
@@ -167,3 +194,25 @@ add_custom_target(run_all_sizes)
 foreach(size ${SMALL_SIZES} ${LARGE_SIZES})
     add_dependencies(run_all_sizes run_all_${size})
 endforeach()
+
+# Add benchmark targets for comparison
+add_custom_target(benchmark_small
+    DEPENDS create_all_inputs
+)
+foreach(size ${SMALL_SIZES})
+    add_dependencies(benchmark_small run_all_${size})
+endforeach()
+
+add_custom_target(benchmark_large
+    DEPENDS create_all_inputs
+)
+foreach(size ${LARGE_SIZES})
+    add_dependencies(benchmark_large run_all_${size})
+endforeach()
+
+# Add comprehensive report target
+add_custom_target(generate_report
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating performance report..."
+    COMMAND ${CMAKE_COMMAND} -E cat ${EVAL_DIR}/*.txt > ${EVAL_DIR}/comprehensive_report.txt
+    DEPENDS analyze_all
+)
