@@ -72,7 +72,7 @@ __global__ void fft_butterfly_optimized(float* d_r, int width, int height, int m
 }
 
 void compute_2d_fft(float* d_data, int width, int height) {
-    dim3 block(128);  // smaller block to improve warp utilization
+    dim3 block(64);  // smaller block to improve warp utilization
     dim3 grid((height + block.x - 1) / block.x, 1);
     
     // Calculate shared memory size
