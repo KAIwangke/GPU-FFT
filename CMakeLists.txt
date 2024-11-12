@@ -124,8 +124,8 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       lts__t_sector_hit_rate.pct,\
                       dram__sectors_per_request_umin.pct,\
                       smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct"
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
     # Memory throughput analysis
@@ -138,8 +138,8 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       dram__throughput.avg.pct_of_peak_sustained_elapsed,\
                       l1tex__throughput.avg.pct_of_peak_sustained_elapsed,\
                       lts__throughput.avg.pct_of_peak_sustained_elapsed"
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
     # Cache and compute efficiency analysis
@@ -152,8 +152,8 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       sm__warps_active.avg.pct_of_peak_sustained_active,\
                       sm__sass_thread_inst_executed_per_launched_thread.ratio,\
                       l1tex__throughput.avg.pct_of_peak_sustained_elapsed"
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
     # Occupancy and launch statistics
@@ -165,8 +165,8 @@ foreach(impl stage0 stage1 stage2 stage3 cufft)
                       sm__warps_active.avg.pct_of_peak_sustained_active,\
                       sm__maximum_warps_per_active_cycle_pct,\
                       l1tex__data_pipe_lsu_wavefronts_mem_shared.sum"
-            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/1024x1024_matrix.dat
-        DEPENDS fft_${impl} ${INPUT_DIR}/1024x1024_matrix.dat
+            $<TARGET_FILE:fft_${impl}> ${INPUT_DIR}/64x64_matrix.dat
+        DEPENDS fft_${impl} ${INPUT_DIR}/64x64_matrix.dat
     )
 
     # Full analysis target
