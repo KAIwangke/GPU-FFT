@@ -1,33 +1,39 @@
 import sys
 import csv
+import re
 
 def process_ncu_csv(input_file, output_file):
     # Read the CSV data
     metrics = {}
+    data_started = False
+    metric_names = []
+    rows = []
+
     with open(input_file, 'r') as csvfile:
-        reader = csv.DictReader(csvfile)
-        rows = list(reader)
-        metric_names = reader.fieldnames
+        reader = csv.reader(csvfile)
+        for row in reader:
+            if not data_started:
+                # Look for the line that starts with "ID,"
+                if row and row[0].strip() == "ID":
+                    data_started = True
+                    metric_names = row[1:]  # Exclude the "ID" column
+            else:
+                # Collect metric values
+                if row and re.match(r'^\d+$', row[0]):  # Check if the ID is a number
+                    rows.append([float(value) if value else 0.0 for value in row[1:]])
 
-    # Initialize sums
-    sums = {name: 0.0 for name in metric_names}
-    count = len(rows)
+    if not rows:
+        print(f"No data found in {input_file}")
+        return
 
-    # Sum up the metrics
-    for row in rows:
-        for name in metric_names:
-            try:
-                sums[name] += float(row[name])
-            except ValueError:
-                pass  # Skip non-numeric fields
-
-    # Compute averages
-    averages = {name: sums[name]/count for name in metric_names}
+    # Transpose the data to compute averages per metric
+    columns = list(zip(*rows))
+    averages = [sum(column) / len(column) for column in columns]
 
     # Write the averages to the output file
     with open(output_file, 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=metric_names)
-        writer.writeheader()
+        writer = csv.writer(csvfile)
+        writer.writerow(metric_names)
         writer.writerow(averages)
 
 if __name__ == '__main__':
