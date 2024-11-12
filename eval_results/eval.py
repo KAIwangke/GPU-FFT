@@ -10,7 +10,7 @@ def clean_csv(file_path):
 
 def main():
     # List of stages and file types
-    stages = ['', 'stage0_', 'stage1_', 'stage2_', 'stage3_']
+    stages = ['cufft_', 'stage0_', 'stage1_', 'stage2_', 'stage3_']
     types = ['cache', 'memtrans', 'occupancy', 'throughput']
 
     # DataFrame to hold all combined data
