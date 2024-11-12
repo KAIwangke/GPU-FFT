@@ -51,7 +51,7 @@ endforeach()
 foreach(size ${SMALL_SIZES})
     add_custom_command(
         OUTPUT ${INPUT_DIR}/${size}x${size}_matrix.dat
-        COMMAND generate_matrix ${size}
+        COMMAND ${CMAKE_BINARY_DIR}/generate_matrix ${size} ${CMAKE_SOURCE_DIR}
         DEPENDS generate_matrix
         COMMENT "Generating ${size}x${size} matrix if not exists"
     )
@@ -62,12 +62,15 @@ endforeach()
 foreach(size ${LARGE_SIZES})
     add_custom_command(
         OUTPUT ${INPUT_DIR}/${size}x${size}_matrix.dat
-        COMMAND generate_matrix ${size}
+        COMMAND ${CMAKE_BINARY_DIR}/generate_matrix ${size} ${CMAKE_SOURCE_DIR}
         DEPENDS generate_matrix
         COMMENT "Generating ${size}x${size} matrix if not exists"
     )
     list(APPEND LARGE_INPUT_FILES ${INPUT_DIR}/${size}x${size}_matrix.dat)
 endforeach()
+
+# Make sure input directory exists
+file(MAKE_DIRECTORY ${INPUT_DIR})
 
 # Create high-level input generation targets
 add_custom_target(create_small_inputs

@@ -5,9 +5,11 @@
 #include <string>
 #include <filesystem>
 
-void generate_matrix(int size) {
-    std::filesystem::create_directory("input");
-    std::string filename = "input/" + std::to_string(size) + "x" + std::to_string(size) + "_matrix.dat";
+void generate_matrix(int size, const std::string& base_dir) {
+    std::string input_dir = base_dir + "/input";
+    std::filesystem::create_directories(input_dir);  // Create nested directories if needed
+    
+    std::string filename = input_dir + "/" + std::to_string(size) + "x" + std::to_string(size) + "_matrix.dat";
     
     // Check if file already exists
     if (std::filesystem::exists(filename)) {
@@ -33,21 +35,16 @@ void generate_matrix(int size) {
 }
 
 int main(int argc, char** argv) {
-    srand(time(NULL));
-    
-    #ifdef SINGLE_SIZE_MODE
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <size>\n";
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <size> [base_directory]\n";
         return 1;
     }
-    generate_matrix(std::atoi(argv[1]));
-    #else
-    // Original multiple size generation code
-    int sizes[] = {32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384};
-    for (int size : sizes) {
-        generate_matrix(size);
-    }
-    #endif
-
+    
+    srand(time(NULL));
+    
+    int size = std::atoi(argv[1]);
+    std::string base_dir = (argc > 2) ? argv[2] : ".";
+    
+    generate_matrix(size, base_dir);
     return 0;
 }
