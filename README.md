@@ -49,6 +49,59 @@ To run FFT operations:
 
 You can run the project for different stages and sizes by modifying the size in the command.
 
+Below are the `make` commands for running the FFT implementations for all predefined matrix sizes in your project. These commands will execute the FFT on each size for each implementation stage as well as the CuFFT library, assuming the input matrix data files have already been generated.
+
+### Run Commands for Each FFT Implementation and Matrix Size
+
+1. **CPU Implementation:**
+   ```bash
+   make run_cpu_32
+   make run_cpu_64
+   make run_cpu_128
+   make run_cpu_256
+   make run_cpu_512
+   make run_cpu_1024
+   make run_cpu_2048
+   make run_cpu_4096
+   make run_cpu_8192
+   make run_cpu_16384
+   ```
+
+2. **Stage 0 GPU Implementation:**
+   ```bash
+   make run_stage0_N
+   ```
+
+3. **Stage 1 GPU Implementation:**
+   ```bash
+   make run_stage1_N
+   ```
+
+4. **Stage 2 GPU Implementation:**
+   ```bash
+   make run_stage2_N
+   ```
+
+5. **Stage 3 GPU Implementation:**
+   ```bash
+   make run_stage3_N
+   ```
+
+6. **CuFFT Library:**
+   ```bash
+   make run_cufft_N
+   ```
+
+### Run All FFT Implementations for a Specific Matrix Size
+
+If you want to run all FFT implementations for a specific matrix size, you can use commands like the following:
+
+```bash
+make run_all_N
+```
+
+These commands will trigger all available implementations (CPU, all GPU stages, and CuFFT) for each respective matrix size. Make sure all input matrices are generated before running these commands to avoid errors.
+
 ## Performance Analysis
 
 This project is equipped with NVIDIA's `ncu` tool commands integrated into custom targets for memory transactions, throughput, and cache efficiency analysis. To execute these analyses for a specific implementation (e.g., `fft_stage0`), run:
@@ -84,5 +137,3 @@ This will concatenate all analysis results into a single CSV file in the `eval_r
 
 - Ensure CUDA and OpenMP packages are correctly installed and configured on your system.
 - The project uses CUDA architecture 75 by default, which corresponds to NVIDIA Turing architecture GPUs. Adjust the `CMAKE_CUDA_ARCHITECTURES` in the CMakeLists file to match your GPU capabilities.
-
-```
