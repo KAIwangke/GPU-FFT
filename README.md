@@ -1,6 +1,4 @@
-Here is a sample README for your GPU_FFT project which outlines the project setup, how to build and run it, and describes the performance analysis tools used:
 
-```markdown
 # GPU_FFT Project
 
 The GPU_FFT project is designed to perform fast Fourier transforms (FFT) on large matrices using CUDA. It includes implementations that leverage different optimization strategies across multiple stages of the FFT computation.
