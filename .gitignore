@@ -1,3 +1,13 @@
 src/all_contents.txt
 src/scan.sh
 build
+32x32_matrix.dat
+64x64_matrix.dat
+128x128_matrix.dat
+256x256_matrix.dat
+512x512_matrix.dat
+1024x1024_matrix.dat
+2048x2048_matrix.dat
+4096x4096_matrix.dat
+8192x8192_matrix.dat
+16384x16384_matrix.dat

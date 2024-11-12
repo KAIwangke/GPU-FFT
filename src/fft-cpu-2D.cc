@@ -97,15 +97,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Print input sample
-    std::cout << "Input Matrix (partial):" << std::endl;
-    for (int i = 0; i < std::min(5, height); ++i) {
-        for (int j = 0; j < std::min(5, width); ++j) {
-            std::cout << data[i * width * 2 + j * 2] << " ";
-        }
-        std::cout << std::endl;
-    }
-
     // Start timing
     auto start = std::chrono::high_resolution_clock::now();
 
