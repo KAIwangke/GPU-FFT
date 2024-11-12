@@ -81,15 +81,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Print input sample
-    std::cout << "Input Matrix (partial):" << std::endl;
-    for (int i = 0; i < std::min(5, height); ++i) {
-        for (int j = 0; j < std::min(5, width); ++j) {
-            std::cout << h_data_in[i * width + j] << " ";
-        }
-        std::cout << std::endl;
-    }
-
     // Convert input to single precision real
     std::vector<float> h_data_real(width * height);
     for (int i = 0; i < width * height; ++i) {

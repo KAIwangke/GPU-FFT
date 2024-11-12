@@ -1,82 +1,86 @@
 #include "common.hpp"
 #include <iostream>
-#include <fstream>
-#include <sstream>
+#include <vector>
 #include <cmath>
 #include <chrono>
-#include <dirent.h>  // For directory handling
-#include <cstring>
-
-using namespace std;
 
 #define M_PI 3.14159265358979323846
 
-// Function for 1D FFT on rows
-void fft_1d_row(float* data, int width, int height, int step) {
-    int half_step = step / 2;
-    for (int row = 0; row < height; ++row) {
-        for (int col = 0; col < half_step; ++col) {
-            int idx1 = row * width * 2 + col * 2;
-            int idx2 = idx1 + step * 2;
+void fft_1d(std::vector<float>& real, std::vector<float>& imag, int n) {
+    // Base case
+    if (n <= 1) return;
 
-            float angle = -2.0f * M_PI * col / step;
-            float t_real = cosf(angle);
-            float t_imag = sinf(angle);
+    // Split into even and odd
+    std::vector<float> even_real(n/2), even_imag(n/2);
+    std::vector<float> odd_real(n/2), odd_imag(n/2);
+    
+    for (int i = 0; i < n/2; i++) {
+        even_real[i] = real[2*i];
+        even_imag[i] = imag[2*i];
+        odd_real[i] = real[2*i + 1];
+        odd_imag[i] = imag[2*i + 1];
+    }
 
-            float u_real = data[idx1];
-            float u_imag = data[idx1 + 1];
-            float v_real = data[idx2];
-            float v_imag = data[idx2 + 1];
+    // Recursive FFT on even and odd parts
+    fft_1d(even_real, even_imag, n/2);
+    fft_1d(odd_real, odd_imag, n/2);
 
-            float tr = t_real * v_real - t_imag * v_imag;
-            float ti = t_real * v_imag + t_imag * v_real;
-
-            data[idx1] = u_real + tr;
-            data[idx1 + 1] = u_imag + ti;
-            data[idx2] = u_real - tr;
-            data[idx2 + 1] = u_imag - ti;
-        }
+    // Combine results
+    for (int k = 0; k < n/2; k++) {
+        float angle = -2.0f * M_PI * k / n;
+        float cos_val = cosf(angle);
+        float sin_val = sinf(angle);
+        
+        // t = odd[k] * exp(-2πik/n)
+        float t_real = cos_val * odd_real[k] - sin_val * odd_imag[k];
+        float t_imag = cos_val * odd_imag[k] + sin_val * odd_real[k];
+        
+        real[k] = even_real[k] + t_real;
+        imag[k] = even_imag[k] + t_imag;
+        
+        real[k + n/2] = even_real[k] - t_real;
+        imag[k + n/2] = even_imag[k] - t_imag;
     }
 }
 
-// Function for 1D FFT on columns
-void fft_1d_column(float* data, int width, int height, int step) {
-    int half_step = step / 2;
-    for (int col = 0; col < width; ++col) {
-        for (int row = 0; row < half_step; ++row) {
-            int idx1 = col * 2 + row * width * 2;
-            int idx2 = idx1 + step * width * 2;
-
-            float angle = -2.0f * M_PI * row / step;
-            float t_real = cosf(angle);
-            float t_imag = sinf(angle);
-
-            float u_real = data[idx1];
-            float u_imag = data[idx1 + 1];
-            float v_real = data[idx2];
-            float v_imag = data[idx2 + 1];
-
-            float tr = t_real * v_real - t_imag * v_imag;
-            float ti = t_real * v_imag + t_imag * v_real;
-
-            data[idx1] = u_real + tr;
-            data[idx1 + 1] = u_imag + ti;
-            data[idx2] = u_real - tr;
-            data[idx2 + 1] = u_imag - ti;
+void compute_2d_fft_cpu(std::vector<float>& data, int width, int height) {
+    std::vector<float> real_row(width), imag_row(width);
+    std::vector<float> real_col(height), imag_col(height);
+    
+    // Process rows
+    for (int i = 0; i < height; i++) {
+        // Extract row
+        for (int j = 0; j < width; j++) {
+            real_row[j] = data[(i * width + j) * 2];
+            imag_row[j] = data[(i * width + j) * 2 + 1];
+        }
+        
+        // FFT on row
+        fft_1d(real_row, imag_row, width);
+        
+        // Write back row
+        for (int j = 0; j < width; j++) {
+            data[(i * width + j) * 2] = real_row[j];
+            data[(i * width + j) * 2 + 1] = imag_row[j];
         }
     }
-}
-
-
-
-void compute_2d_fft_cpu(float* data, int width, int height) {
-    // Perform FFT on rows
-    for (int step = 2; step <= width; step <<= 1) {
-        fft_1d_row(data, width, height, step);
-    }
-    // Perform FFT on columns
-    for (int step = 2; step <= height; step <<= 1) {
-        fft_1d_column(data, width, height, step);
+    
+    // Process columns
+    for (int j = 0; j < width; j++) {
+        // Extract column
+        for (int i = 0; i < height; i++) {
+            real_col[i] = data[(i * width + j) * 2];
+            imag_col[i] = data[(i * width + j) * 2 + 1];
+        }
+        
+        // FFT on column
+        fft_1d(real_col, imag_col, height);
+        
+        // Write back column
+        for (int i = 0; i < height; i++) {
+            data[(i * width + j) * 2] = real_col[i];
+            data[(i * width + j) * 2 + 1] = imag_col[i];
+        }
     }
 }
 
@@ -89,6 +93,13 @@ int main(int argc, char** argv) {
     // Get matrix dimensions
     int width, height;
     get_matrix_dimensions(argv[1], width, height);
+    
+    // Verify dimensions are power of 2
+    if ((width & (width - 1)) != 0 || (height & (height - 1)) != 0) {
+        std::cerr << "Error: Matrix dimensions must be power of 2" << std::endl;
+        return 1;
+    }
+    
     std::cout << "Processing matrix of size " << width << "x" << height << std::endl;
 
     // Read input data
@@ -106,7 +117,7 @@ int main(int argc, char** argv) {
     // Stop timing
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "Total execution time: " << duration.count() << " ms" << std::endl;
 
+    std::cout << "Total execution time: " << duration.count() << " ms" << std::endl;
     return 0;
 }
