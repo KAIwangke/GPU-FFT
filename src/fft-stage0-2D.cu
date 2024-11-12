@@ -1,5 +1,16 @@
 #include "common.hpp"
 
+// Helper function to get next power of 2
+__host__ __device__ inline int nextPowerOf2(int n) {
+    n--;
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+    return n + 1;
+}
+
 __global__ void fft_1d_row(float* d_r, int width, int height, int step) {
     int row = blockIdx.x;
     int col = threadIdx.x;
@@ -66,8 +77,8 @@ __global__ void fft_1d_column(float* d_r, int width, int height, int step) {
 
 void compute_2d_fft(float* d_data, int width, int height) {
     // Calculate optimal block size
-    int max_threads = 256;
-    int block_size = std::min(max_threads, nextPowerOf2(width/2));
+    const int max_threads = 256;
+    int block_size = (width/2 >= max_threads) ? max_threads : nextPowerOf2(width/2);
     
     dim3 block(block_size);
     dim3 grid_row((height + block.x - 1) / block.x);
@@ -87,18 +98,6 @@ void compute_2d_fft(float* d_data, int width, int height) {
         CHECK_CUDA(cudaDeviceSynchronize());
     }
 }
-
-// Helper function to get next power of 2
-inline int nextPowerOf2(int n) {
-    n--;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    return n + 1;
-}
-
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
