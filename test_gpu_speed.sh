@@ -4,7 +4,7 @@ MATRIX_SIZE=1024
 RUNS=5
 
 # Check if input file exists
-INPUT_FILE="../input/${MATRIX_SIZE}x${MATRIX_SIZE}_matrix.dat"
+INPUT_FILE="input/${MATRIX_SIZE}x${MATRIX_SIZE}_matrix.dat"
 if [ ! -f "$INPUT_FILE" ]; then
     echo "Generating input matrix..."
     ./generate_matrix $MATRIX_SIZE ..
