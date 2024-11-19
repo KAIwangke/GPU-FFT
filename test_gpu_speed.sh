@@ -11,7 +11,7 @@ if [ ! -f "$INPUT_FILE" ]; then
 fi
 
 # Array of GPU implementations to test
-IMPLEMENTATIONS=("stage0" "stage1" "stage2" "stage3" "cufft")
+IMPLEMENTATIONS=("fft_stage0" "fft_stage1" "fft_stage2" "fft_stage3" "cufft")
 
 echo "Testing GPU FFT implementations on ${MATRIX_SIZE}x${MATRIX_SIZE} matrix ($RUNS runs each)"
 echo "----------------------------------------"
