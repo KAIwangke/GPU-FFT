@@ -20,19 +20,19 @@ for impl in "${IMPLEMENTATIONS[@]}"; do
     echo -n "$impl: "
     total=0
     valid_runs=0
-    
+
     # Run implementation multiple times
     for ((i=1; i<=RUNS; i++)); do
         output=$(./fft_${impl} "../input/${MATRIX_SIZE}x${MATRIX_SIZE}_matrix.dat" 2>&1)
-        # Extract just the number from "Stage0: Total execution time: 11.4477 ms"
-        time=$(echo "$output" | grep "Total execution time:" | cut -d' ' -f4)
-        
+        # Extract the numeric execution time from the output
+        time=$(echo "$output" | grep "Total execution time:" | awk '{print $(NF-1)}')
+
         if [ ! -z "$time" ]; then
             total=$(echo "$total + $time" | bc)
             valid_runs=$((valid_runs + 1))
         fi
     done
-    
+
     if [ $valid_runs -gt 0 ]; then
         average=$(echo "scale=4; $total / $valid_runs" | bc)
         echo "$average ms"
