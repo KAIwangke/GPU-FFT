@@ -72,17 +72,17 @@ Below are the `make` commands for running the FFT implementations for all predef
    make run_stage0_N
    ```
 
-3. **Stage 1 GPU Implementation:**
+3. **Stage 1 Shared memory optimized kernel**
    ```bash
    make run_stage1_N
    ```
 
-4. **Stage 2 GPU Implementation:**
+4. **Stage 2 Memory coalescing and bank conflict optimization**
    ```bash
    make run_stage2_N
    ```
 
-5. **Stage 3 GPU Implementation:**
+5. **Stage 3 Warp-level optimization**
    ```bash
    make run_stage3_N
    ```
