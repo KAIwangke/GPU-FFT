@@ -48,7 +48,6 @@ void compute_2d_fft_cpu(float* data, int width, int height) {
     
     // Process rows
     for (int i = 0; i < height; i++) {
-        // Extract row
         for (int j = 0; j < width; j++) {
             real_row[j] = data[(i * width + j) * 2];
             imag_row[j] = data[(i * width + j) * 2 + 1];
@@ -110,7 +109,7 @@ int main(int argc, char** argv) {
     // Start timing
     auto start = std::chrono::high_resolution_clock::now();
 
-    // Perform FFT
+    // Perform FFT 
     compute_2d_fft_cpu(data.data(), width, height);
 
     // Stop timing

@@ -10,16 +10,10 @@ void compute_2d_fft_cufft(const std::vector<float>& h_data, int width, int heigh
     cufftComplex* d_data_out;
     CHECK_CUDA(cudaMalloc((void**)&d_data_in, sizeof(cufftReal) * width * height));
     CHECK_CUDA(cudaMalloc((void**)&d_data_out, sizeof(cufftComplex) * height * complex_cols));
-
-    // Create CUDA events for timing
     cudaEvent_t start, stop;
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
-
-    // Start timing
     CHECK_CUDA(cudaEventRecord(start));
-
-    // Copy input data to device
     CHECK_CUDA(cudaMemcpy(d_data_in, h_data.data(), 
                          sizeof(cufftReal) * width * height, 
                          cudaMemcpyHostToDevice));
@@ -42,13 +36,11 @@ void compute_2d_fft_cufft(const std::vector<float>& h_data, int width, int heigh
         return;
     }
 
-    // Copy results back to host
     h_result.resize(height * complex_cols);
     CHECK_CUDA(cudaMemcpy(h_result.data(), d_data_out,
                          sizeof(cufftComplex) * height * complex_cols,
                          cudaMemcpyDeviceToHost));
 
-    // Stop timing
     CHECK_CUDA(cudaEventRecord(stop));
     CHECK_CUDA(cudaEventSynchronize(stop));
 
@@ -56,7 +48,6 @@ void compute_2d_fft_cufft(const std::vector<float>& h_data, int width, int heigh
     CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
     std::cout << "CUFFT: Total execution time: " << milliseconds << " ms" << std::endl;
 
-    // Cleanup
     cufftDestroy(plan);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
