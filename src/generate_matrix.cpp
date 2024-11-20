@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <string>
+#include <iomanip>  // For std::setprecision
 #include <filesystem>
 
 void generate_matrix(int size, const std::string& base_dir) {
@@ -23,9 +24,12 @@ void generate_matrix(int size, const std::string& base_dir) {
         return;
     }
     
+    // Set the precision for writing double values
+    outfile << std::fixed << std::setprecision(6);
+
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
-            float real_part = static_cast<float>(rand() % 100);
+            double real_part = static_cast<double>(rand()) / RAND_MAX; // Generate a double value between 0 and 1
             outfile << real_part << " ";
         }
         outfile << "\n";
@@ -40,7 +44,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    srand(time(NULL));
+    srand(static_cast<unsigned>(time(NULL)));
     
     int size = std::atoi(argv[1]);
     std::string base_dir = (argc > 2) ? argv[2] : ".";
